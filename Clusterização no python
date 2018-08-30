@@ -1,0 +1,219 @@
+import pandas as pd
+import numpy as np
+import gc
+import matplotlib.pyplot as plt
+from datetime import datetime
+from scipy import stats
+from sklearn import preprocessing
+
+# Puxar base
+df = pd.read_excel("Online Retail.xlsx")
+
+# Selecionando somente as colunas necessárias:
+# Invoice, StockCode, Quantity, Price, InvoiceData, PostCode
+df = df[['InvoiceNo','StockCode','Quantity','UnitPrice','InvoiceDate','Country','CustomerID']]
+
+# Criando variável Amount, multiplicando Quantity and UnitPrice
+df['amount'] = df.Quantity * df.UnitPrice
+
+# Percebi que existem valores e quantidades menores que 0. Estas serão retirados.
+# filtrar = 'United Kingdom'
+# df_t = df[df['Country']== filtrar]
+
+filtrar = 0
+df_t = df[df['UnitPrice'] >= filtrar]
+df_t = df_t[df_t['Quantity'] >= filtrar]
+
+# Separando InvoiveDate em data e hora
+temp = pd.DatetimeIndex(df_t['InvoiceDate'])
+df_t['Date'] = temp.date
+df_t['Time'] = temp.time
+df_t.drop('InvoiceDate', axis=1)
+
+# Transformar variáveis de tempo para criação da recência
+datetime_object = datetime.strptime('2012-01-01', '%Y-%m-%d')
+df_t['maxdate'] = datetime_object
+
+# Criando as funções agregadas
+tryme = df_t.groupby("CustomerID", as_index=False).agg({"maxdate": np.max, "Date": np.max, "InvoiceNo": lambda x: x.nunique(), "amount": np.sum})
+
+# Criando variável de valor
+valor = tryme.amount/tryme.InvoiceNo
+tryme['valor'] = valor
+tryme = tryme.rename(index=str, columns={"InvoiceNo": "frequencia"})
+
+# Convertendo variáveis
+tryme['date_object_c']= tryme['maxdate'].astype(str)
+tryme['max_date_c']= tryme['Date'].astype(str)
+d1 = tryme['date_object_c'].apply(lambda x: datetime.strptime(x, '%Y-%m-%d'))
+d2 = tryme['max_date_c'].apply(lambda x: datetime.strptime(x, '%Y-%m-%d'))
+delta = d1 - d2
+d3 = delta.dt.days
+tryme['recencia'] = d3
+
+# Criando base final para clusterizar
+X = tryme[['valor','recencia','frequencia']]
+
+# Retirando Outliers
+X = X[(np.abs(stats.zscore(X)) < 3).all(axis=1)]
+
+# Get column names first
+names = X.columns
+# Create the Scaler object
+scaler = preprocessing.StandardScaler()
+# Fit your data on the scaler object
+scaled_df = scaler.fit_transform(X)
+scaled_df = pd.DataFrame(scaled_df, columns=names)
+
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from sklearn.datasets import make_blobs
+
+plt.rcParams['figure.figsize'] = (12, 8)
+
+# Base que será usada nos clusters
+testando = scaled_df.values
+
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.neighbors import kneighbors_graph
+# needed imports
+from matplotlib import pyplot as plt
+from scipy.cluster.hierarchy import dendrogram, linkage
+
+# generate the linkage matrix
+Z = linkage(testando, 'ward')
+
+from scipy.cluster.hierarchy import cophenet
+from scipy.spatial.distance import pdist
+
+c, coph_dists = cophenet(Z, pdist(testando))
+c
+
+# calculate full dendrogram# calcul 
+plt.figure(figsize=(25, 10))
+plt.title('Hierarchical Clustering Dendrogram')
+plt.xlabel('sample index')
+plt.ylabel('distance')
+dendrogram(
+    Z,
+    leaf_rotation=90.,  # rotates the x axis labels
+    leaf_font_size=8.,  # font size for the x axis labels
+)
+plt.show()
+
+#Truncated dendogram
+plt.title('Hierarchical Clustering Dendrogram (truncated)')
+plt.xlabel('sample index or (cluster size)')
+plt.ylabel('distance')
+dendrogram(
+    Z,
+    truncate_mode='lastp',  # show only the last p merged clusters
+    p=12,  # show only the last p merged clusters
+    leaf_rotation=90.,
+    leaf_font_size=12.,
+    show_contracted=True,  # to get a distribution impression in truncated branches
+)
+plt.show()
+
+# Método Elbow para determinar melhor número de K
+from sklearn.cluster import KMeans
+wcss = []
+num_k = 15
+ 
+for i in range(1, num_k):
+    kmeans = KMeans(n_clusters = i, init = 'random')
+    kmeans.fit(scaled_df)
+    print(i,kmeans.inertia_)
+    wcss.append(kmeans.inertia_)  
+plt.plot(range(1, num_k), wcss)
+plt.title('O Metodo Elbow')
+plt.xlabel('Numero de Clusters')
+plt.ylabel('WSS') #within cluster sum of squares
+plt.show()
+
+# Initializing KMeans
+kmeans = KMeans(n_clusters=5, init='random')
+# Fitting with inputs
+kmeans = kmeans.fit(testando)
+# Predicting the clusters
+y = kmeans.predict(testando)
+# Getting the cluster centers
+C = kmeans.cluster_centers_
+# Getting the distance
+distance = kmeans.fit_transform(testando)
+# Getting the labels
+labels = kmeans.labels_
+# Plotando
+fig = plt.figure()
+ax = Axes3D(fig)
+ax.scatter(testando[:, 0], testando[:, 1], testando[:, 2], c=y)
+ax.scatter(C[:, 0], C[:, 1], C[:, 2], marker='*', c='#050505', s=1000)
+plt.show()
+
+from sklearn.cluster import AffinityPropagation
+from sklearn import metrics
+from sklearn.datasets.samples_generator import make_blobs
+
+# af = AffinityPropagation(preference=-50).fit(testando)
+af = AffinityPropagation(damping=0.8, convergence_iter=2, preference=-75).fit(testando)
+cluster_centers_indices = af.cluster_centers_indices_
+labels = af.labels_
+
+labels_true = af.fit_predict(testando)
+
+n_clusters_ = len(cluster_centers_indices)
+
+print('Estimated number of clusters: %d' % n_clusters_)
+print("Homogeneity: %0.3f" % metrics.homogeneity_score(labels_true, labels))
+print("Completeness: %0.3f" % metrics.completeness_score(labels_true, labels))
+print("V-measure: %0.3f" % metrics.v_measure_score(labels_true, labels))
+print("Adjusted Rand Index: %0.3f"
+      % metrics.adjusted_rand_score(labels_true, labels))
+print("Adjusted Mutual Information: %0.3f"
+      % metrics.adjusted_mutual_info_score(labels_true, labels))
+print("Silhouette Coefficient: %0.3f"
+      % metrics.silhouette_score(testando, labels, metric='sqeuclidean'))
+
+# #############################################################################
+# Plot result
+import matplotlib.pyplot as plt
+from itertools import cycle
+
+plt.close('all')
+plt.figure(1)
+plt.clf()
+
+colors = cycle('bgrcmykbgrcmykbgrcmykbgrcmyk')
+for k, col in zip(range(n_clusters_), colors):
+    class_members = labels == k
+    cluster_center = testando[cluster_centers_indices[k]]
+    plt.plot(testando[class_members, 0], testando[class_members, 1], col + '.')
+    plt.plot(cluster_center[0], cluster_center[1], '*', markerfacecolor=col,
+             markeredgecolor='k', markersize=14)
+    for x in testando[class_members]:
+        plt.plot([cluster_center[0], x[0]], [cluster_center[1], x[1]], col)
+
+plt.title('Estimated number of clusters: %d' % n_clusters_)
+plt.show()
+af.get_params()
+
+# A abordagem clássica para agrupamentos pressupõem que casa objeto pertence única e exclusivamente a um grupo específico. 
+# Entretanto, essa hipótese pode não ser realista em alguma situações, nas quais os dados comprrendem grupos que se sobrepõem 
+# uns aos outros em algum grau.
+import skfuzzy as fuzz
+
+cntr, u_orig, u0, d, jm, p, fpc = fuzz.cluster.cmeans(
+    testando, 5, 2, error=0.0005, maxiter=1000)
+
+u_pred, u0_pred, d_pred, jm_pred, p_pred, fpc_pred = fuzz.cmeans_predict(
+    testando, cntr, 2, error=0.0005,maxiter=1000,init=None,seed=None)
+# Show 3-cluster model
+fig2, ax2 = plt.subplots()
+ax2.set_title('Trained model')
+for j in range(3):
+    ax2.plot(testando[0, u_orig.argmax(axis=0) == j],
+             testando[1, u_orig.argmax(axis=0) == j], 'o',
+             label='series ' + str(j))
+ax2.legend()
+plt.show()
